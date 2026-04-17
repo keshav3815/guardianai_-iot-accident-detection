@@ -1,0 +1,7 @@
+{
+  "name": "GuardianAI: IoT Accident Detection",
+  "description": "An AI-powered vehicular safety monitoring system that analyzes real-time sensor data to detect accidents and coordinate emergency responses.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
