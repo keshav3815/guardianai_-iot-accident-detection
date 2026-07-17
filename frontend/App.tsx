@@ -26,35 +26,53 @@ const INDIA_BASE_LAT = 28.6139;
 const INDIA_BASE_LNG = 77.2090;
 let routeOffset = 0;
 
+const randRange = (min: number, max: number) => Math.random() * (max - min) + min;
+// Sample a value biased toward the tails of [minMag, maxMag], with a random sign.
+// Used for gyro_z in the minor/severe scenarios, where the real dataset shows
+// the severity signal concentrated in large +/- excursions on that one axis
+// rather than a mid-range value.
+const randTail = (minMag: number, maxMag: number) => randRange(minMag, maxMag) * (Math.random() < 0.5 ? -1 : 1);
+
+// Every range below is taken directly from the empirical per-axis min/max (or
+// +/-1 std around the mean) of the backend model's training data
+// (backend/sensor_raw.csv), bucketed by the same severity score used to train
+// it. Earlier versions of this generator used an invented 0-20g/0-5rad-s
+// scale that had no relationship to the real sensor data, so "Collision"
+// clicks were classified as Normal by the model no matter how large they
+// looked in the UI. Keep these in sync with train_model.py's thresholds if
+// the dataset or labeling scheme changes.
 const generateMockData = (scenario: 'normal' | 'minor' | 'severe' = 'normal'): SensorData => {
   const now = new Date();
   routeOffset += 0.00008;
+
   const scenarios = {
     normal: {
-      acc: () => parseFloat((Math.random() * 0.4 - 0.2).toFixed(3)),
-      gyro: () => parseFloat((Math.random() * 0.05 - 0.025).toFixed(4)),
-      vib: () => parseFloat((Math.random() * 4 + 1).toFixed(2)),
-      speed: () => parseFloat((38 + Math.random() * 12).toFixed(1)),
+      accX: () => randRange(0.09, 0.43), accY: () => randRange(-0.20, 0.0), accZ: () => randRange(-1.05, -0.89),
+      gyroX: () => randRange(-2.84, 1.60), gyroY: () => randRange(1.65, 5.91), gyroZ: () => randRange(-0.53, 2.43),
+      vib: () => randRange(1, 5), speed: () => randRange(38, 50),
     },
     minor: {
-      acc: () => parseFloat((Math.random() * 6 - 3).toFixed(3)),
-      gyro: () => parseFloat((Math.random() * 0.4 - 0.2).toFixed(4)),
-      vib: () => parseFloat((Math.random() * 35 + 18).toFixed(2)),
-      speed: () => parseFloat((15 + Math.random() * 8).toFixed(1)),
+      accX: () => randRange(-0.2, 0.75), accY: () => randRange(-0.55, 0.5), accZ: () => randRange(-1.35, -0.6),
+      gyroX: () => randRange(-14.5, 10.5), gyroY: () => randRange(-8.5, 17), gyroZ: () => randTail(0, 25),
+      vib: () => randRange(18, 53), speed: () => randRange(15, 23),
     },
     severe: {
-      acc: () => parseFloat((15 + Math.random() * 5).toFixed(3)),
-      gyro: () => parseFloat((2 + Math.random()).toFixed(4)),
-      vib: () => parseFloat((95 + Math.random() * 55).toFixed(2)),
-      speed: () => parseFloat((1 + Math.random() * 4).toFixed(1)),
+      accX: () => randRange(-0.25, 0.55), accY: () => randRange(-0.8, 0.8), accZ: () => randRange(-1.35, -0.7),
+      gyroX: () => randRange(-15, 13), gyroY: () => randRange(-10.5, 14.5), gyroZ: () => randTail(20, 50),
+      vib: () => randRange(95, 150), speed: () => randRange(1, 5),
     },
   };
   const s = scenarios[scenario];
+
   return {
-    accelerometer_x: s.acc(), accelerometer_y: s.acc(), accelerometer_z: s.acc(),
-    gyroscope_x: s.gyro(), gyroscope_y: s.gyro(), gyroscope_z: s.gyro(),
-    vibration_level: s.vib(),
-    vehicle_speed: s.speed(),
+    accelerometer_x: parseFloat(s.accX().toFixed(3)),
+    accelerometer_y: parseFloat(s.accY().toFixed(3)),
+    accelerometer_z: parseFloat(s.accZ().toFixed(3)),
+    gyroscope_x: parseFloat(s.gyroX().toFixed(4)),
+    gyroscope_y: parseFloat(s.gyroY().toFixed(4)),
+    gyroscope_z: parseFloat(s.gyroZ().toFixed(4)),
+    vibration_level: parseFloat(s.vib().toFixed(2)),
+    vehicle_speed: parseFloat(s.speed().toFixed(1)),
     gps_latitude: INDIA_BASE_LAT + routeOffset + (Math.random() * 0.00004),
     gps_longitude: INDIA_BASE_LNG + routeOffset * 0.7 + (Math.random() * 0.00004),
     timestamp: now.toISOString(),
@@ -292,7 +310,7 @@ export default function App() {
       if (result.emergency_alert) {
         setShowEmergencyModal(true);
         setTotalAlerts(n => n + 1);
-        setIncidentPoints(prev => [...prev, { latlng: [data.gps_latitude, data.gps_longitude], type: raw.status }].slice(-20));
+        setIncidentPoints(prev => [...prev, { latlng: [data.gps_latitude, data.gps_longitude] as [number, number], type: raw.status }].slice(-20));
       } else if (raw.status === 'Minor Accident') {
         setTotalAlerts(n => n + 1);
       }
@@ -482,14 +500,14 @@ export default function App() {
                   </div>
                   <div className="space-y-3.5">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Accelerometer (g)</p>
-                    <GaugeBar label="X" value={currentSensorData.accelerometer_x} max={20} barClass="bg-blue-500" />
-                    <GaugeBar label="Y" value={currentSensorData.accelerometer_y} max={20} barClass="bg-indigo-500" />
-                    <GaugeBar label="Z" value={currentSensorData.accelerometer_z} max={20} barClass="bg-violet-500" />
+                    <GaugeBar label="X" value={currentSensorData.accelerometer_x} max={1.5} barClass="bg-blue-500" />
+                    <GaugeBar label="Y" value={currentSensorData.accelerometer_y} max={1.5} barClass="bg-indigo-500" />
+                    <GaugeBar label="Z" value={currentSensorData.accelerometer_z} max={1.5} barClass="bg-violet-500" />
                     <div className="border-t border-slate-50 pt-3">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2.5">Gyroscope (rad/s)</p>
-                      <GaugeBar label="X" value={currentSensorData.gyroscope_x} max={5} barClass="bg-cyan-500" />
-                      <div className="mt-2"><GaugeBar label="Y" value={currentSensorData.gyroscope_y} max={5} barClass="bg-teal-500" /></div>
-                      <div className="mt-2"><GaugeBar label="Z" value={currentSensorData.gyroscope_z} max={5} barClass="bg-emerald-500" /></div>
+                      <GaugeBar label="X" value={currentSensorData.gyroscope_x} max={40} barClass="bg-cyan-500" />
+                      <div className="mt-2"><GaugeBar label="Y" value={currentSensorData.gyroscope_y} max={40} barClass="bg-teal-500" /></div>
+                      <div className="mt-2"><GaugeBar label="Z" value={currentSensorData.gyroscope_z} max={40} barClass="bg-emerald-500" /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <div className="p-3 bg-orange-50 rounded-xl text-center border border-orange-100">
@@ -715,15 +733,15 @@ export default function App() {
                     <span className="text-xs font-black text-slate-700 uppercase tracking-wider">Gyroscope (rad/s)</span>
                   </div>
                   <div className="space-y-3">
-                    <GaugeBar label="X axis" value={currentSensorData.gyroscope_x} max={5} barClass="bg-blue-500" />
-                    <GaugeBar label="Y axis" value={currentSensorData.gyroscope_y} max={5} barClass="bg-indigo-500" />
-                    <GaugeBar label="Z axis" value={currentSensorData.gyroscope_z} max={5} barClass="bg-violet-500" />
+                    <GaugeBar label="X axis" value={currentSensorData.gyroscope_x} max={40} barClass="bg-blue-500" />
+                    <GaugeBar label="Y axis" value={currentSensorData.gyroscope_y} max={40} barClass="bg-indigo-500" />
+                    <GaugeBar label="Z axis" value={currentSensorData.gyroscope_z} max={40} barClass="bg-violet-500" />
                   </div>
                   <div className="mt-4 border-t border-slate-50 pt-3">
                     <p className="text-[9px] text-slate-400 font-black uppercase mb-2">Accelerometer (g)</p>
                     <div className="space-y-2">
-                      <GaugeBar label="X" value={currentSensorData.accelerometer_x} max={20} barClass="bg-cyan-500" />
-                      <GaugeBar label="Y" value={currentSensorData.accelerometer_y} max={20} barClass="bg-teal-500" />
+                      <GaugeBar label="X" value={currentSensorData.accelerometer_x} max={1.5} barClass="bg-cyan-500" />
+                      <GaugeBar label="Y" value={currentSensorData.accelerometer_y} max={1.5} barClass="bg-teal-500" />
                     </div>
                   </div>
                 </div>
